@@ -268,6 +268,50 @@ export default function Index() {
     }
   };
 
+  const handleStartBots = async (channelId: string) => {
+    try {
+      const response = await fetch(`${API_URL}?action=start-bots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`Запущено ${data.started} ботов!`);
+        await loadData();
+      } else {
+        alert(data.error || 'Ошибка запуска ботов');
+      }
+    } catch (error) {
+      alert('Ошибка подключения к серверу');
+      console.error(error);
+    }
+  };
+
+  const handleStopBots = async (channelId: string) => {
+    try {
+      const response = await fetch(`${API_URL}?action=stop-bots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`Остановлено ${data.stopped} ботов`);
+        await loadData();
+      } else {
+        alert(data.error || 'Ошибка остановки ботов');
+      }
+    } catch (error) {
+      alert('Ошибка подключения к серверу');
+      console.error(error);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'bg-green-500/20 text-green-400 border-green-500/50';
@@ -564,17 +608,36 @@ export default function Index() {
                                   <p className="font-mono font-semibold text-primary">{channel.activeBots}</p>
                                 </div>
                               </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Button 
+                                  className="gap-2" 
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    const count = prompt('Сколько ботов назначить на канал?', channel.targetViewers.toString());
+                                    if (count) handleAssignBots(channel.id, parseInt(count));
+                                  }}
+                                >
+                                  <Icon name="Users" size={16} />
+                                  Назначить
+                                </Button>
+                                <Button 
+                                  className="gap-2" 
+                                  size="sm"
+                                  onClick={() => handleStartBots(channel.id)}
+                                >
+                                  <Icon name="Play" size={16} />
+                                  Запустить
+                                </Button>
+                              </div>
                               <Button 
                                 className="w-full gap-2" 
                                 size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  const count = prompt('Сколько ботов назначить на канал?', channel.targetViewers.toString());
-                                  if (count) handleAssignBots(channel.id, parseInt(count));
-                                }}
+                                variant="destructive"
+                                onClick={() => handleStopBots(channel.id)}
                               >
-                                <Icon name="Users" size={16} />
-                                Назначить ботов
+                                <Icon name="Square" size={16} />
+                                Остановить ботов
                               </Button>
                             </CardContent>
                           </Card>

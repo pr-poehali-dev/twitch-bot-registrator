@@ -385,6 +385,190 @@ def handler(event: dict, context) -> dict:
                 'isBase64Encoded': False
             }
         
+        elif method == 'POST' and path == 'start-bots':
+            body = json.loads(event.get('body', '{}'))
+            channel_id = body.get('channelId')
+            
+            if not channel_id:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'ID канала обязателен'}),
+                    'isBase64Encoded': False
+                }
+            
+            cur.execute(f'''
+                SELECT id, username FROM {schema}.twitch_accounts 
+                WHERE assigned_channel_id = %s AND status = 'active' 
+                AND (connection_status IS NULL OR connection_status = 'offline')
+            ''', (channel_id,))
+            
+            bots_to_start = cur.fetchall()
+            
+            if not bots_to_start:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Нет ботов для запуска'}),
+                    'isBase64Encoded': False
+                }
+            
+            started_count = 0
+            for bot_id, username in bots_to_start:
+                cur.execute(f'''
+                    UPDATE {schema}.twitch_accounts 
+                    SET connection_status = 'online', last_connection_time = NOW()
+                    WHERE id = %s
+                ''', (bot_id,))
+                
+                cur.execute(f'''
+                    INSERT INTO {schema}.bot_sessions (account_id, channel_id, status)
+                    VALUES (%s, %s, 'active')
+                ''', (bot_id, channel_id))
+                
+                started_count += 1
+            
+            cur.execute(f'''
+                INSERT INTO {schema}.registration_logs (log_type, message)
+                VALUES ('success', %s)
+            ''', (f'Запущено {started_count} ботов на канале',))
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'success': True, 'started': started_count}),
+                'isBase64Encoded': False
+            }
+        
+        elif method == 'POST' and path == 'stop-bots':
+            body = json.loads(event.get('body', '{}'))
+            channel_id = body.get('channelId')
+            
+            if not channel_id:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'ID канала обязателен'}),
+                    'isBase64Encoded': False
+                }
+            
+            cur.execute(f'''
+                SELECT id FROM {schema}.twitch_accounts 
+                WHERE assigned_channel_id = %s AND connection_status = 'online'
+            ''', (channel_id,))
+            
+            bots_to_stop = [row[0] for row in cur.fetchall()]
+            
+            if not bots_to_stop:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Нет активных ботов'}),
+                    'isBase64Encoded': False
+                }
+            
+            for bot_id in bots_to_stop:
+                cur.execute(f'''
+                    UPDATE {schema}.twitch_accounts 
+                    SET connection_status = 'offline'
+                    WHERE id = %s
+                ''', (bot_id,))
+                
+                cur.execute(f'''
+                    UPDATE {schema}.bot_sessions 
+                    SET status = 'stopped', ended_at = NOW()
+                    WHERE account_id = %s AND channel_id = %s AND status = 'active'
+                ''', (bot_id, channel_id))
+            
+            cur.execute(f'''
+                INSERT INTO {schema}.registration_logs (log_type, message)
+                VALUES ('info', %s)
+            ''', (f'Остановлено {len(bots_to_stop)} ботов на канале',))
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'success': True, 'stopped': len(bots_to_stop)}),
+                'isBase64Encoded': False
+            }
+        
+        elif method == 'GET' and path == 'bot-status':
+            channel_id = event.get('queryStringParameters', {}).get('channelId')
+            
+            if not channel_id:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'ID канала обязателен'}),
+                    'isBase64Encoded': False
+                }
+            
+            cur.execute(f'''
+                SELECT COUNT(*) FROM {schema}.twitch_accounts 
+                WHERE assigned_channel_id = %s AND connection_status = 'online'
+            ''', (channel_id,))
+            online_count = cur.fetchone()[0]
+            
+            cur.execute(f'''
+                SELECT COUNT(*) FROM {schema}.twitch_accounts 
+                WHERE assigned_channel_id = %s
+            ''', (channel_id,))
+            total_count = cur.fetchone()[0]
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'online': online_count,
+                    'total': total_count,
+                    'offline': total_count - online_count
+                }),
+                'isBase64Encoded': False
+            }
+        
         elif method == 'DELETE':
             body = json.loads(event.get('body', '{}'))
             account_id = body.get('id')
