@@ -49,6 +49,12 @@ export default function Index() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [bulkCount, setBulkCount] = useState(10);
+  const [bulkPrefix, setBulkPrefix] = useState('bot_user_');
+  const [bulkDomain, setBulkDomain] = useState('@example.com');
+  const [bulkProgress, setBulkProgress] = useState(0);
+  const [bulkTotal, setBulkTotal] = useState(0);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const fetchAccounts = async () => {
     try {
@@ -133,6 +139,45 @@ export default function Index() {
     } catch (error) {
       alert('Ошибка подключения к серверу');
       console.error(error);
+    }
+  };
+
+  const handleBulkRegister = async () => {
+    if (bulkCount < 1 || bulkCount > 100) {
+      alert('Количество должно быть от 1 до 100');
+      return;
+    }
+
+    setBulkSubmitting(true);
+    setBulkProgress(0);
+    setBulkTotal(bulkCount);
+
+    try {
+      const response = await fetch(`${API_URL}?action=bulk-register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          count: bulkCount,
+          prefix: bulkPrefix,
+          domain: bulkDomain,
+          password: 'DefaultPass123'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setBulkProgress(data.created);
+        alert(`Создано: ${data.created} аккаунтов\nОшибок: ${data.failed}`);
+        await loadData();
+      } else {
+        alert(data.error || 'Ошибка массовой регистрации');
+      }
+    } catch (error) {
+      alert('Ошибка подключения к серверу');
+      console.error(error);
+    } finally {
+      setBulkSubmitting(false);
     }
   };
 
@@ -398,28 +443,55 @@ export default function Index() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="count">Количество аккаунтов</Label>
-                    <Input id="count" type="number" placeholder="10" defaultValue="10" />
+                    <Input 
+                      id="count" 
+                      type="number" 
+                      placeholder="10" 
+                      value={bulkCount}
+                      onChange={(e) => setBulkCount(parseInt(e.target.value) || 10)}
+                      min="1"
+                      max="100"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="prefix">Префикс username</Label>
-                    <Input id="prefix" placeholder="bot_user_" className="font-mono" />
+                    <Input 
+                      id="prefix" 
+                      placeholder="bot_user_" 
+                      className="font-mono"
+                      value={bulkPrefix}
+                      onChange={(e) => setBulkPrefix(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="domain">Email домен</Label>
-                    <Input id="domain" placeholder="@example.com" />
+                    <Input 
+                      id="domain" 
+                      placeholder="@example.com"
+                      value={bulkDomain}
+                      onChange={(e) => setBulkDomain(e.target.value)}
+                    />
                   </div>
-                  <div className="rounded-lg border border-border/40 p-4 bg-muted/20">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Прогресс регистрации</span>
-                        <span className="font-mono">7/10</span>
+                  {bulkSubmitting && (
+                    <div className="rounded-lg border border-border/40 p-4 bg-muted/20">
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Прогресс регистрации</span>
+                          <span className="font-mono">{bulkProgress}/{bulkTotal}</span>
+                        </div>
+                        <Progress value={(bulkProgress / bulkTotal) * 100} className="h-2" />
                       </div>
-                      <Progress value={70} className="h-2" />
                     </div>
-                  </div>
-                  <Button className="w-full gap-2" size="lg" variant="secondary">
+                  )}
+                  <Button 
+                    className="w-full gap-2" 
+                    size="lg" 
+                    variant="secondary"
+                    onClick={handleBulkRegister}
+                    disabled={bulkSubmitting}
+                  >
                     <Icon name="Rocket" size={20} />
-                    Запустить массовую регистрацию
+                    {bulkSubmitting ? 'Регистрация...' : 'Запустить массовую регистрацию'}
                   </Button>
                 </CardContent>
               </Card>

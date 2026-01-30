@@ -163,6 +163,78 @@ def handler(event: dict, context) -> dict:
                 'isBase64Encoded': False
             }
         
+        elif method == 'POST' and path == 'bulk-register':
+            body = json.loads(event.get('body', '{}'))
+            count = body.get('count', 10)
+            prefix = body.get('prefix', 'bot_user_')
+            domain = body.get('domain', '@example.com')
+            password = body.get('password', 'DefaultPass123')
+            
+            if count < 1 or count > 100:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Количество должно быть от 1 до 100'}),
+                    'isBase64Encoded': False
+                }
+            
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            created_accounts = []
+            failed_accounts = []
+            
+            cur.execute(f'SELECT MAX(CAST(SUBSTRING(username FROM %s) AS INTEGER)) FROM {schema}.twitch_accounts WHERE username LIKE %s', 
+                       (f'{len(prefix) + 1}', f'{prefix}%'))
+            result = cur.fetchone()[0]
+            start_num = (result + 1) if result else 1
+            
+            for i in range(count):
+                username = f'{prefix}{start_num + i:03d}'
+                email = f'{username}{domain}'
+                
+                try:
+                    cur.execute(f'''
+                        INSERT INTO {schema}.twitch_accounts (username, email, password_hash, status)
+                        VALUES (%s, %s, %s, 'active')
+                        RETURNING id
+                    ''', (username, email, password_hash))
+                    
+                    account_id = cur.fetchone()[0]
+                    created_accounts.append({'id': account_id, 'username': username, 'email': email})
+                    
+                except psycopg2.IntegrityError:
+                    failed_accounts.append({'username': username, 'error': 'Username или email уже существует'})
+                    continue
+            
+            if created_accounts:
+                cur.execute(f'''
+                    INSERT INTO {schema}.registration_logs (log_type, message)
+                    VALUES ('success', %s)
+                ''', (f'Массовая регистрация: создано {len(created_accounts)} аккаунтов',))
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'success': True,
+                    'created': len(created_accounts),
+                    'failed': len(failed_accounts),
+                    'accounts': created_accounts,
+                    'errors': failed_accounts
+                }),
+                'isBase64Encoded': False
+            }
+        
         elif method == 'DELETE':
             body = json.loads(event.get('body', '{}'))
             account_id = body.get('id')
