@@ -4,6 +4,7 @@ import psycopg2
 from datetime import datetime
 import hashlib
 import random
+from ai_chat import analyze_stream_audio, generate_multiple_messages
 
 def handler(event: dict, context) -> dict:
     '''API для управления Twitch аккаунтами и регистрации ботов'''
@@ -389,6 +390,7 @@ def handler(event: dict, context) -> dict:
         elif method == 'POST' and path == 'start-bots':
             body = json.loads(event.get('body', '{}'))
             channel_id = body.get('channelId')
+            use_ai = body.get('useAI', True)
             
             if not channel_id:
                 cur.close()
@@ -402,6 +404,27 @@ def handler(event: dict, context) -> dict:
                     'body': json.dumps({'error': 'ID канала обязателен'}),
                     'isBase64Encoded': False
                 }
+            
+            cur.execute(f'''
+                SELECT channel_name, channel_url FROM {schema}.twitch_channels
+                WHERE id = %s
+            ''', (channel_id,))
+            channel_data = cur.fetchone()
+            
+            if not channel_data:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 404,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Канал не найден'}),
+                    'isBase64Encoded': False
+                }
+            
+            channel_name, channel_url = channel_data
             
             cur.execute(f'''
                 SELECT id, username FROM {schema}.twitch_accounts 
@@ -424,7 +447,25 @@ def handler(event: dict, context) -> dict:
                     'isBase64Encoded': False
                 }
             
-            chat_messages = [
+            stream_context = None
+            ai_messages = []
+            
+            if use_ai and os.environ.get('OPENAI_API_KEY'):
+                try:
+                    stream_context = analyze_stream_audio(channel_url, channel_name)
+                    cur.execute(f'''
+                        UPDATE {schema}.twitch_channels 
+                        SET stream_context = %s, last_audio_analysis = NOW()
+                        WHERE id = %s
+                    ''', (stream_context, channel_id))
+                    
+                    total_bots = len(bots_to_start)
+                    messages_needed = total_bots * 2
+                    ai_messages = generate_multiple_messages(stream_context, messages_needed)
+                except Exception as e:
+                    stream_context = None
+            
+            fallback_messages = [
                 'Привет всем!', 'Отличный стрим!', 'Круто!', 'Интересно смотреть',
                 'Продолжай в том же духе', 'Супер!', 'Классно получается',
                 'Поддерживаю!', 'Давай еще!', 'Это огонь!', 'Respect',
@@ -433,6 +474,9 @@ def handler(event: dict, context) -> dict:
             ]
             
             started_count = 0
+            message_pool = ai_messages if ai_messages else fallback_messages
+            message_index = 0
+            
             for bot_id, username in bots_to_start:
                 cur.execute(f'''
                     UPDATE {schema}.twitch_accounts 
@@ -448,13 +492,21 @@ def handler(event: dict, context) -> dict:
                 
                 session_id = cur.fetchone()[0]
                 
-                messages_count = random.randint(1, 3)
+                messages_count = random.randint(1, 2)
                 for _ in range(messages_count):
-                    message = random.choice(chat_messages)
+                    if ai_messages and message_index < len(ai_messages):
+                        message = ai_messages[message_index]
+                        message_index += 1
+                        is_ai = True
+                    else:
+                        message = random.choice(fallback_messages)
+                        is_ai = False
+                    
                     cur.execute(f'''
-                        INSERT INTO {schema}.chat_messages (account_id, channel_id, session_id, message_text)
-                        VALUES (%s, %s, %s, %s)
-                    ''', (bot_id, channel_id, session_id, message))
+                        INSERT INTO {schema}.chat_messages 
+                        (account_id, channel_id, session_id, message_text, is_ai_generated, context_used)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    ''', (bot_id, channel_id, session_id, message, is_ai, stream_context))
                 
                 cur.execute(f'''
                     UPDATE {schema}.bot_sessions 
@@ -464,10 +516,14 @@ def handler(event: dict, context) -> dict:
                 
                 started_count += 1
             
+            log_msg = f'Запущено {started_count} ботов на канале'
+            if stream_context:
+                log_msg += ' (AI-режим активирован)'
+            
             cur.execute(f'''
                 INSERT INTO {schema}.registration_logs (log_type, message)
                 VALUES ('success', %s)
-            ''', (f'Запущено {started_count} ботов на канале',))
+            ''', (log_msg,))
             
             cur.close()
             conn.close()
@@ -478,7 +534,12 @@ def handler(event: dict, context) -> dict:
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*'
                 },
-                'body': json.dumps({'success': True, 'started': started_count}),
+                'body': json.dumps({
+                    'success': True, 
+                    'started': started_count,
+                    'aiEnabled': bool(stream_context),
+                    'context': stream_context
+                }),
                 'isBase64Encoded': False
             }
         
@@ -669,7 +730,7 @@ def handler(event: dict, context) -> dict:
             cur.execute(f'''
                 SELECT cm.id, ta.username, cm.message_text, 
                        TO_CHAR(cm.sent_at, 'YYYY-MM-DD HH24:MI:SS') as sent_at,
-                       cm.status
+                       cm.status, cm.is_ai_generated, cm.context_used
                 FROM {schema}.chat_messages cm
                 JOIN {schema}.twitch_accounts ta ON cm.account_id = ta.id
                 WHERE cm.channel_id = %s
@@ -684,7 +745,9 @@ def handler(event: dict, context) -> dict:
                     'username': row[1],
                     'message': row[2],
                     'sentAt': row[3],
-                    'status': row[4]
+                    'status': row[4],
+                    'isAiGenerated': row[5] if row[5] is not None else False,
+                    'contextUsed': row[6]
                 })
             
             cur.close()

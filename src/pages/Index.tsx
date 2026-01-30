@@ -49,6 +49,8 @@ type ChatMessage = {
   message: string;
   sentAt: string;
   status: string;
+  isAiGenerated?: boolean;
+  contextUsed?: string;
 };
 
 const API_URL = 'https://functions.poehali.dev/cb3eb127-fcf9-4bb9-8d92-4c8186b1a52a';
@@ -630,27 +632,33 @@ export default function Index() {
                                   <p className="font-mono font-semibold text-primary">{channel.activeBots}</p>
                                 </div>
                               </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Button 
-                                  className="gap-2" 
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => {
-                                    const count = prompt('Сколько ботов назначить на канал?', channel.targetViewers.toString());
-                                    if (count) handleAssignBots(channel.id, parseInt(count));
-                                  }}
-                                >
-                                  <Icon name="Users" size={16} />
-                                  Назначить
-                                </Button>
-                                <Button 
-                                  className="gap-2" 
-                                  size="sm"
-                                  onClick={() => handleStartBots(channel.id)}
-                                >
-                                  <Icon name="Play" size={16} />
-                                  Запустить
-                                </Button>
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Button 
+                                    className="gap-2" 
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      const count = prompt('Сколько ботов назначить на канал?', channel.targetViewers.toString());
+                                      if (count) handleAssignBots(channel.id, parseInt(count));
+                                    }}
+                                  >
+                                    <Icon name="Users" size={16} />
+                                    Назначить
+                                  </Button>
+                                  <Button 
+                                    className="gap-2" 
+                                    size="sm"
+                                    onClick={() => handleStartBots(channel.id)}
+                                  >
+                                    <Icon name="Play" size={16} />
+                                    Запустить
+                                  </Button>
+                                </div>
+                                <div className="flex items-center gap-2 p-2 rounded bg-primary/10 border border-primary/20">
+                                  <Icon name="Sparkles" className="text-primary" size={16} />
+                                  <span className="text-xs text-primary font-medium">AI контекст активен</span>
+                                </div>
                               </div>
                               <div className="grid grid-cols-2 gap-2">
                                 <Button 
@@ -707,13 +715,27 @@ export default function Index() {
                         ) : (
                           chatMessages.map((msg) => (
                             <div key={msg.id} className="flex gap-3 items-start p-3 rounded-lg bg-card/50 border border-border/20 hover:bg-card/70 transition-colors">
-                              <Icon name="Bot" className="text-primary" size={20} />
+                              {msg.isAiGenerated ? (
+                                <Icon name="Sparkles" className="text-primary" size={20} />
+                              ) : (
+                                <Icon name="Bot" className="text-muted-foreground" size={20} />
+                              )}
                               <div className="flex-1 space-y-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold text-sm">{msg.username}</span>
+                                  {msg.isAiGenerated && (
+                                    <Badge variant="outline" className="bg-primary/20 text-primary border-primary/50 text-xs">
+                                      AI
+                                    </Badge>
+                                  )}
                                   <span className="text-xs text-muted-foreground font-mono">{msg.sentAt}</span>
                                 </div>
                                 <p className="text-sm">{msg.message}</p>
+                                {msg.contextUsed && (
+                                  <p className="text-xs text-muted-foreground italic mt-1">
+                                    Контекст: {msg.contextUsed.substring(0, 60)}...
+                                  </p>
+                                )}
                               </div>
                               <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/50 text-xs">
                                 {msg.status}

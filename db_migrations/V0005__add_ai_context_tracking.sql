@@ -1,0 +1,6 @@
+ALTER TABLE twitch_channels ADD COLUMN IF NOT EXISTS stream_context TEXT;
+ALTER TABLE twitch_channels ADD COLUMN IF NOT EXISTS last_audio_analysis TIMESTAMP;
+ALTER TABLE twitch_channels ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN DEFAULT TRUE;
+
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_ai_generated BOOLEAN DEFAULT FALSE;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS context_used TEXT;
