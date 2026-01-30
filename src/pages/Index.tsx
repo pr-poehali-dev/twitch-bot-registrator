@@ -43,6 +43,14 @@ type Channel = {
   createdAt: string;
 };
 
+type ChatMessage = {
+  id: string;
+  username: string;
+  message: string;
+  sentAt: string;
+  status: string;
+};
+
 const API_URL = 'https://functions.poehali.dev/cb3eb127-fcf9-4bb9-8d92-4c8186b1a52a';
 
 export default function Index() {
@@ -70,6 +78,8 @@ export default function Index() {
   const [channelUrl, setChannelUrl] = useState('');
   const [targetViewers, setTargetViewers] = useState(10);
   const [channelSubmitting, setChannelSubmitting] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
   const fetchAccounts = async () => {
     try {
@@ -99,6 +109,17 @@ export default function Index() {
       setChannels(data.channels);
     } catch (error) {
       console.error('Ошибка загрузки каналов:', error);
+    }
+  };
+
+  const fetchChatMessages = async (channelId: string) => {
+    try {
+      const response = await fetch(`${API_URL}?action=chat-messages&channelId=${channelId}`);
+      const data = await response.json();
+      setChatMessages(data.messages);
+      setSelectedChannelId(channelId);
+    } catch (error) {
+      console.error('Ошибка загрузки сообщений:', error);
     }
   };
 
@@ -279,8 +300,9 @@ export default function Index() {
       const data = await response.json();
 
       if (response.ok) {
-        alert(`Запущено ${data.started} ботов!`);
+        alert(`Запущено ${data.started} ботов! Сообщения отправлены в чат.`);
         await loadData();
+        await fetchChatMessages(channelId);
       } else {
         alert(data.error || 'Ошибка запуска ботов');
       }
@@ -630,15 +652,26 @@ export default function Index() {
                                   Запустить
                                 </Button>
                               </div>
-                              <Button 
-                                className="w-full gap-2" 
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handleStopBots(channel.id)}
-                              >
-                                <Icon name="Square" size={16} />
-                                Остановить ботов
-                              </Button>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Button 
+                                  className="gap-2" 
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleStopBots(channel.id)}
+                                >
+                                  <Icon name="Square" size={16} />
+                                  Остановить
+                                </Button>
+                                <Button 
+                                  className="gap-2" 
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => fetchChatMessages(channel.id)}
+                                >
+                                  <Icon name="MessageCircle" size={16} />
+                                  Чат
+                                </Button>
+                              </div>
                             </CardContent>
                           </Card>
                         ))
@@ -647,6 +680,52 @@ export default function Index() {
                   </ScrollArea>
                 </CardContent>
               </Card>
+
+              {selectedChannelId && (
+                <Card className="border-border/40 lg:col-span-2">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2">
+                        <Icon name="MessageCircle" size={24} />
+                        Активность в чате
+                      </CardTitle>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setSelectedChannelId(null)}
+                      >
+                        <Icon name="X" size={16} />
+                      </Button>
+                    </div>
+                    <CardDescription>Сообщения отправленные ботами на канале</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[400px]">
+                      <div className="space-y-2">
+                        {chatMessages.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">Нет сообщений</div>
+                        ) : (
+                          chatMessages.map((msg) => (
+                            <div key={msg.id} className="flex gap-3 items-start p-3 rounded-lg bg-card/50 border border-border/20 hover:bg-card/70 transition-colors">
+                              <Icon name="Bot" className="text-primary" size={20} />
+                              <div className="flex-1 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-sm">{msg.username}</span>
+                                  <span className="text-xs text-muted-foreground font-mono">{msg.sentAt}</span>
+                                </div>
+                                <p className="text-sm">{msg.message}</p>
+                              </div>
+                              <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/50 text-xs">
+                                {msg.status}
+                              </Badge>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </TabsContent>
 

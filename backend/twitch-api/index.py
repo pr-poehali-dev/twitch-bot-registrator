@@ -3,6 +3,7 @@ import os
 import psycopg2
 from datetime import datetime
 import hashlib
+import random
 
 def handler(event: dict, context) -> dict:
     '''API для управления Twitch аккаунтами и регистрации ботов'''
@@ -423,6 +424,14 @@ def handler(event: dict, context) -> dict:
                     'isBase64Encoded': False
                 }
             
+            chat_messages = [
+                'Привет всем!', 'Отличный стрим!', 'Круто!', 'Интересно смотреть',
+                'Продолжай в том же духе', 'Супер!', 'Классно получается',
+                'Поддерживаю!', 'Давай еще!', 'Это огонь!', 'Respect',
+                'Лайк!', 'Top!', 'PogChamp', 'Kappa', 'LUL', 'GG', 'Nice',
+                'Красавчик!', 'Молодец!', 'Продолжай'
+            ]
+            
             started_count = 0
             for bot_id, username in bots_to_start:
                 cur.execute(f'''
@@ -434,7 +443,24 @@ def handler(event: dict, context) -> dict:
                 cur.execute(f'''
                     INSERT INTO {schema}.bot_sessions (account_id, channel_id, status)
                     VALUES (%s, %s, 'active')
+                    RETURNING id
                 ''', (bot_id, channel_id))
+                
+                session_id = cur.fetchone()[0]
+                
+                messages_count = random.randint(1, 3)
+                for _ in range(messages_count):
+                    message = random.choice(chat_messages)
+                    cur.execute(f'''
+                        INSERT INTO {schema}.chat_messages (account_id, channel_id, session_id, message_text)
+                        VALUES (%s, %s, %s, %s)
+                    ''', (bot_id, channel_id, session_id, message))
+                
+                cur.execute(f'''
+                    UPDATE {schema}.bot_sessions 
+                    SET messages_sent = %s
+                    WHERE id = %s
+                ''', (messages_count, session_id))
                 
                 started_count += 1
             
@@ -621,6 +647,56 @@ def handler(event: dict, context) -> dict:
                     'Access-Control-Allow-Origin': '*'
                 },
                 'body': json.dumps({'success': True, 'message': 'Аккаунт заблокирован'}),
+                'isBase64Encoded': False
+            }
+        
+        elif method == 'GET' and path == 'chat-messages':
+            channel_id = event.get('queryStringParameters', {}).get('channelId')
+            
+            if not channel_id:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'ID канала обязателен'}),
+                    'isBase64Encoded': False
+                }
+            
+            cur.execute(f'''
+                SELECT cm.id, ta.username, cm.message_text, 
+                       TO_CHAR(cm.sent_at, 'YYYY-MM-DD HH24:MI:SS') as sent_at,
+                       cm.status
+                FROM {schema}.chat_messages cm
+                JOIN {schema}.twitch_accounts ta ON cm.account_id = ta.id
+                WHERE cm.channel_id = %s
+                ORDER BY cm.sent_at DESC
+                LIMIT 100
+            ''', (channel_id,))
+            
+            messages = []
+            for row in cur.fetchall():
+                messages.append({
+                    'id': str(row[0]),
+                    'username': row[1],
+                    'message': row[2],
+                    'sentAt': row[3],
+                    'status': row[4]
+                })
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'messages': messages}),
                 'isBase64Encoded': False
             }
         
