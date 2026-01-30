@@ -33,11 +33,22 @@ type Stats = {
   banned: number;
 };
 
+type Channel = {
+  id: string;
+  channelName: string;
+  channelUrl: string;
+  targetViewers: number;
+  activeBots: number;
+  status: string;
+  createdAt: string;
+};
+
 const API_URL = 'https://functions.poehali.dev/cb3eb127-fcf9-4bb9-8d92-4c8186b1a52a';
 
 export default function Index() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
   const [stats, setStats] = useState<Stats>({
     total: 0,
     active: 0,
@@ -55,6 +66,10 @@ export default function Index() {
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkTotal, setBulkTotal] = useState(0);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [channelName, setChannelName] = useState('');
+  const [channelUrl, setChannelUrl] = useState('');
+  const [targetViewers, setTargetViewers] = useState(10);
+  const [channelSubmitting, setChannelSubmitting] = useState(false);
 
   const fetchAccounts = async () => {
     try {
@@ -77,9 +92,19 @@ export default function Index() {
     }
   };
 
+  const fetchChannels = async () => {
+    try {
+      const response = await fetch(`${API_URL}?action=channels`);
+      const data = await response.json();
+      setChannels(data.channels);
+    } catch (error) {
+      console.error('Ошибка загрузки каналов:', error);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
-    await Promise.all([fetchAccounts(), fetchLogs()]);
+    await Promise.all([fetchAccounts(), fetchLogs(), fetchChannels()]);
     setLoading(false);
   };
 
@@ -181,6 +206,68 @@ export default function Index() {
     }
   };
 
+  const handleAddChannel = async () => {
+    if (!channelName || !channelUrl) {
+      alert('Заполните название и URL канала');
+      return;
+    }
+
+    setChannelSubmitting(true);
+    try {
+      const response = await fetch(`${API_URL}?action=add-channel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelName,
+          channelUrl,
+          targetViewers
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Канал успешно добавлен!');
+        setChannelName('');
+        setChannelUrl('');
+        setTargetViewers(10);
+        await loadData();
+      } else {
+        alert(data.error || 'Ошибка добавления канала');
+      }
+    } catch (error) {
+      alert('Ошибка подключения к серверу');
+      console.error(error);
+    } finally {
+      setChannelSubmitting(false);
+    }
+  };
+
+  const handleAssignBots = async (channelId: string, botCount: number) => {
+    try {
+      const response = await fetch(`${API_URL}?action=assign-bots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId,
+          botCount
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`Назначено ${data.assigned} ботов на канал`);
+        await loadData();
+      } else {
+        alert(data.error || 'Ошибка назначения ботов');
+      }
+    } catch (error) {
+      alert('Ошибка подключения к серверу');
+      console.error(error);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'bg-green-500/20 text-green-400 border-green-500/50';
@@ -276,10 +363,14 @@ export default function Index() {
         </div>
 
         <Tabs defaultValue="accounts" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 h-12 bg-card/50">
+          <TabsList className="grid w-full grid-cols-5 h-12 bg-card/50">
             <TabsTrigger value="accounts" className="gap-2 data-[state=active]:bg-primary/20">
               <Icon name="Users" size={18} />
               Аккаунты
+            </TabsTrigger>
+            <TabsTrigger value="channels" className="gap-2 data-[state=active]:bg-primary/20">
+              <Icon name="Radio" size={18} />
+              Каналы
             </TabsTrigger>
             <TabsTrigger value="register" className="gap-2 data-[state=active]:bg-primary/20">
               <Icon name="UserPlus" size={18} />
@@ -373,6 +464,127 @@ export default function Index() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="channels" className="space-y-4 mt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="border-border/40">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Icon name="Radio" size={24} />
+                    Добавить канал
+                  </CardTitle>
+                  <CardDescription>Укажите Twitch канал для направления ботов</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="channelName">Название канала</Label>
+                    <Input 
+                      id="channelName" 
+                      placeholder="example_streamer"
+                      value={channelName}
+                      onChange={(e) => setChannelName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="channelUrl">URL канала</Label>
+                    <Input 
+                      id="channelUrl" 
+                      placeholder="https://twitch.tv/example_streamer"
+                      value={channelUrl}
+                      onChange={(e) => setChannelUrl(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="targetViewers">Целевое количество зрителей</Label>
+                    <Input 
+                      id="targetViewers" 
+                      type="number"
+                      placeholder="10"
+                      value={targetViewers}
+                      onChange={(e) => setTargetViewers(parseInt(e.target.value) || 10)}
+                      min="1"
+                    />
+                  </div>
+                  <Button 
+                    className="w-full gap-2" 
+                    size="lg"
+                    onClick={handleAddChannel}
+                    disabled={channelSubmitting}
+                  >
+                    <Icon name="Plus" size={20} />
+                    {channelSubmitting ? 'Добавление...' : 'Добавить канал'}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/40">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Icon name="List" size={24} />
+                    Активные каналы
+                  </CardTitle>
+                  <CardDescription>Управление каналами и ботами</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[400px]">
+                    <div className="space-y-3">
+                      {loading ? (
+                        <div className="text-center py-8 text-muted-foreground">Загрузка...</div>
+                      ) : channels.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">Нет каналов</div>
+                      ) : (
+                        channels.map((channel) => (
+                          <Card key={channel.id} className="bg-muted/20 border-border/40">
+                            <CardContent className="pt-6 space-y-3">
+                              <div className="flex justify-between items-start">
+                                <div className="space-y-1">
+                                  <h3 className="font-semibold text-lg">{channel.channelName}</h3>
+                                  <a 
+                                    href={channel.channelUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                                  >
+                                    <Icon name="ExternalLink" size={14} />
+                                    {channel.channelUrl}
+                                  </a>
+                                </div>
+                                <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/50">
+                                  {channel.status}
+                                </Badge>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                  <p className="text-muted-foreground">Целевые зрители</p>
+                                  <p className="font-mono font-semibold">{channel.targetViewers}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Активных ботов</p>
+                                  <p className="font-mono font-semibold text-primary">{channel.activeBots}</p>
+                                </div>
+                              </div>
+                              <Button 
+                                className="w-full gap-2" 
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  const count = prompt('Сколько ботов назначить на канал?', channel.targetViewers.toString());
+                                  if (count) handleAssignBots(channel.id, parseInt(count));
+                                }}
+                              >
+                                <Icon name="Users" size={16} />
+                                Назначить ботов
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="register" className="space-y-4 mt-6">

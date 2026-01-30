@@ -235,6 +235,156 @@ def handler(event: dict, context) -> dict:
                 'isBase64Encoded': False
             }
         
+        elif method == 'GET' and path == 'channels':
+            cur.execute(f'''
+                SELECT id, channel_name, channel_url, target_viewers, active_bots, status,
+                       TO_CHAR(created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at
+                FROM {schema}.twitch_channels
+                ORDER BY created_at DESC
+            ''')
+            channels = []
+            for row in cur.fetchall():
+                channels.append({
+                    'id': str(row[0]),
+                    'channelName': row[1],
+                    'channelUrl': row[2],
+                    'targetViewers': row[3],
+                    'activeBots': row[4],
+                    'status': row[5],
+                    'createdAt': row[6]
+                })
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'channels': channels}),
+                'isBase64Encoded': False
+            }
+        
+        elif method == 'POST' and path == 'add-channel':
+            body = json.loads(event.get('body', '{}'))
+            channel_name = body.get('channelName')
+            channel_url = body.get('channelUrl')
+            target_viewers = body.get('targetViewers', 0)
+            
+            if not channel_name or not channel_url:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Название канала и URL обязательны'}),
+                    'isBase64Encoded': False
+                }
+            
+            cur.execute(f'''
+                INSERT INTO {schema}.twitch_channels (channel_name, channel_url, target_viewers, status)
+                VALUES (%s, %s, %s, 'active')
+                RETURNING id
+            ''', (channel_name, channel_url, target_viewers))
+            
+            channel_id = cur.fetchone()[0]
+            
+            cur.execute(f'''
+                INSERT INTO {schema}.registration_logs (log_type, message)
+                VALUES ('info', %s)
+            ''', (f'Добавлен канал {channel_name}',))
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'success': True, 'channelId': channel_id}),
+                'isBase64Encoded': False
+            }
+        
+        elif method == 'POST' and path == 'assign-bots':
+            body = json.loads(event.get('body', '{}'))
+            channel_id = body.get('channelId')
+            bot_count = body.get('botCount', 0)
+            
+            if not channel_id or bot_count < 1:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'ID канала и количество ботов обязательны'}),
+                    'isBase64Encoded': False
+                }
+            
+            cur.execute(f'''
+                SELECT id FROM {schema}.twitch_accounts 
+                WHERE status = 'active' AND (assigned_channel_id IS NULL OR assigned_channel_id = %s)
+                LIMIT %s
+            ''', (channel_id, bot_count))
+            
+            available_bots = [row[0] for row in cur.fetchall()]
+            
+            if not available_bots:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Нет доступных ботов'}),
+                    'isBase64Encoded': False
+                }
+            
+            for bot_id in available_bots:
+                cur.execute(f'''
+                    UPDATE {schema}.twitch_accounts 
+                    SET assigned_channel_id = %s, is_active_on_channel = TRUE
+                    WHERE id = %s
+                ''', (channel_id, bot_id))
+            
+            cur.execute(f'''
+                UPDATE {schema}.twitch_channels 
+                SET active_bots = (
+                    SELECT COUNT(*) FROM {schema}.twitch_accounts 
+                    WHERE assigned_channel_id = %s AND is_active_on_channel = TRUE
+                )
+                WHERE id = %s
+            ''', (channel_id, channel_id))
+            
+            cur.execute(f'''
+                INSERT INTO {schema}.registration_logs (log_type, message)
+                VALUES ('success', %s)
+            ''', (f'Назначено {len(available_bots)} ботов на канал',))
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'success': True, 'assigned': len(available_bots)}),
+                'isBase64Encoded': False
+            }
+        
         elif method == 'DELETE':
             body = json.loads(event.get('body', '{}'))
             account_id = body.get('id')
