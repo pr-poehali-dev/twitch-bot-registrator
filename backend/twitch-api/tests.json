@@ -1,0 +1,25 @@
+{
+  "tests": [
+    {
+      "name": "Get accounts list",
+      "method": "GET",
+      "path": "/?action=list",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "accounts": "array",
+        "stats": "object"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get logs",
+      "method": "GET",
+      "path": "/?action=logs",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "logs": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

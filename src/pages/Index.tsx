@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,28 +26,114 @@ type Log = {
   timestamp: string;
 };
 
+type Stats = {
+  total: number;
+  active: number;
+  pending: number;
+  banned: number;
+};
+
+const API_URL = 'https://functions.poehali.dev/cb3eb127-fcf9-4bb9-8d92-4c8186b1a52a';
+
 export default function Index() {
-  const [accounts] = useState<Account[]>([
-    { id: '1', username: 'bot_user_001', email: 'bot001@example.com', status: 'active', createdAt: '2026-01-29', lastUsed: '2026-01-30' },
-    { id: '2', username: 'bot_user_002', email: 'bot002@example.com', status: 'active', createdAt: '2026-01-29', lastUsed: '2026-01-30' },
-    { id: '3', username: 'bot_user_003', email: 'bot003@example.com', status: 'pending', createdAt: '2026-01-30', lastUsed: '-' },
-    { id: '4', username: 'bot_user_004', email: 'bot004@example.com', status: 'active', createdAt: '2026-01-28', lastUsed: '2026-01-30' },
-    { id: '5', username: 'bot_user_005', email: 'bot005@example.com', status: 'banned', createdAt: '2026-01-27', lastUsed: '2026-01-29' },
-  ]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [stats, setStats] = useState<Stats>({
+    total: 0,
+    active: 0,
+    pending: 0,
+    banned: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const [logs] = useState<Log[]>([
-    { id: '1', type: 'success', message: 'Аккаунт bot_user_004 успешно зарегистрирован', timestamp: '2026-01-30 14:32:15' },
-    { id: '2', type: 'info', message: 'OAuth токен обновлен для bot_user_001', timestamp: '2026-01-30 14:28:42' },
-    { id: '3', type: 'error', message: 'Ошибка регистрации: Email уже используется', timestamp: '2026-01-30 14:15:33' },
-    { id: '4', type: 'success', message: 'Аккаунт bot_user_002 добавлен в очередь ботов', timestamp: '2026-01-30 14:10:21' },
-    { id: '5', type: 'info', message: 'Система запущена, инициализация завершена', timestamp: '2026-01-30 14:00:00' },
-  ]);
+  const fetchAccounts = async () => {
+    try {
+      const response = await fetch(`${API_URL}?action=list`);
+      const data = await response.json();
+      setAccounts(data.accounts);
+      setStats(data.stats);
+    } catch (error) {
+      console.error('Ошибка загрузки аккаунтов:', error);
+    }
+  };
 
-  const stats = {
-    total: 142,
-    active: 128,
-    pending: 9,
-    banned: 5,
+  const fetchLogs = async () => {
+    try {
+      const response = await fetch(`${API_URL}?action=logs`);
+      const data = await response.json();
+      setLogs(data.logs);
+    } catch (error) {
+      console.error('Ошибка загрузки логов:', error);
+    }
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+    await Promise.all([fetchAccounts(), fetchLogs()]);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleRegister = async () => {
+    if (!username || !email || !password) {
+      alert('Заполните все поля');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${API_URL}?action=register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Аккаунт успешно создан!');
+        setUsername('');
+        setEmail('');
+        setPassword('');
+        await loadData();
+      } else {
+        alert(data.error || 'Ошибка регистрации');
+      }
+    } catch (error) {
+      alert('Ошибка подключения к серверу');
+      console.error(error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string, username: string) => {
+    if (!confirm(`Заблокировать аккаунт ${username}?`)) return;
+
+    try {
+      const response = await fetch(API_URL, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+
+      if (response.ok) {
+        await loadData();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Ошибка удаления');
+      }
+    } catch (error) {
+      alert('Ошибка подключения к серверу');
+      console.error(error);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -190,34 +276,53 @@ export default function Index() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {accounts.map((account) => (
-                        <TableRow key={account.id} className="border-border/40 hover:bg-muted/30">
-                          <TableCell className="font-mono font-medium">{account.username}</TableCell>
-                          <TableCell className="text-muted-foreground">{account.email}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={getStatusColor(account.status)}>
-                              {account.status === 'active' && 'Активен'}
-                              {account.status === 'pending' && 'Ожидание'}
-                              {account.status === 'banned' && 'Заблокирован'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{account.createdAt}</TableCell>
-                          <TableCell className="text-muted-foreground">{account.lastUsed}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <Icon name="Eye" size={16} />
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <Icon name="Edit" size={16} />
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-400 hover:text-red-300">
-                                <Icon name="Trash2" size={16} />
-                              </Button>
-                            </div>
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                            Загрузка...
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : accounts.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                            Нет аккаунтов
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        accounts.map((account) => (
+                          <TableRow key={account.id} className="border-border/40 hover:bg-muted/30">
+                            <TableCell className="font-mono font-medium">{account.username}</TableCell>
+                            <TableCell className="text-muted-foreground">{account.email}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={getStatusColor(account.status)}>
+                                {account.status === 'active' && 'Активен'}
+                                {account.status === 'pending' && 'Ожидание'}
+                                {account.status === 'banned' && 'Заблокирован'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">{account.createdAt}</TableCell>
+                            <TableCell className="text-muted-foreground">{account.lastUsed}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <Icon name="Eye" size={16} />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <Icon name="Edit" size={16} />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-8 w-8 p-0 text-red-400 hover:text-red-300"
+                                  onClick={() => handleDelete(account.id, account.username)}
+                                >
+                                  <Icon name="Trash2" size={16} />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -238,23 +343,46 @@ export default function Index() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="username">Username</Label>
-                    <Input id="username" placeholder="bot_user_006" className="font-mono" />
+                    <Input 
+                      id="username" 
+                      placeholder="bot_user_006" 
+                      className="font-mono"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" placeholder="bot006@example.com" />
+                    <Input 
+                      id="email" 
+                      type="email" 
+                      placeholder="bot006@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password">Пароль</Label>
-                    <Input id="password" type="password" placeholder="••••••••" />
+                    <Input 
+                      id="password" 
+                      type="password" 
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>OAuth Token (опционально)</Label>
-                    <Input placeholder="Будет сгенерирован автоматически" className="font-mono text-sm" />
+                    <Input placeholder="Будет сгенерирован автоматически" className="font-mono text-sm" disabled />
                   </div>
-                  <Button className="w-full gap-2" size="lg">
+                  <Button 
+                    className="w-full gap-2" 
+                    size="lg"
+                    onClick={handleRegister}
+                    disabled={submitting}
+                  >
                     <Icon name="Zap" size={20} />
-                    Зарегистрировать аккаунт
+                    {submitting ? 'Регистрация...' : 'Зарегистрировать аккаунт'}
                   </Button>
                 </CardContent>
               </Card>
@@ -310,15 +438,21 @@ export default function Index() {
               <CardContent>
                 <ScrollArea className="h-[500px] rounded-lg border border-border/40 p-4 bg-muted/10">
                   <div className="space-y-3">
-                    {logs.map((log) => (
-                      <div key={log.id} className="flex gap-3 items-start p-3 rounded-lg bg-card/50 border border-border/20 hover:bg-card/70 transition-colors">
-                        <Icon name={getLogIcon(log.type)} className={getLogColor(log.type)} size={20} />
-                        <div className="flex-1 space-y-1">
-                          <p className="text-sm">{log.message}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{log.timestamp}</p>
+                    {loading ? (
+                      <div className="text-center py-8 text-muted-foreground">Загрузка...</div>
+                    ) : logs.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">Нет логов</div>
+                    ) : (
+                      logs.map((log) => (
+                        <div key={log.id} className="flex gap-3 items-start p-3 rounded-lg bg-card/50 border border-border/20 hover:bg-card/70 transition-colors">
+                          <Icon name={getLogIcon(log.type)} className={getLogColor(log.type)} size={20} />
+                          <div className="flex-1 space-y-1">
+                            <p className="text-sm">{log.message}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{log.timestamp}</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </ScrollArea>
               </CardContent>
