@@ -4,7 +4,7 @@ import psycopg2
 from datetime import datetime
 import hashlib
 import random
-from ai_chat import analyze_stream_audio, generate_multiple_messages
+from ai_chat import analyze_stream_audio, generate_multiple_messages, get_stream_preview, analyze_stream_visual
 
 def handler(event: dict, context) -> dict:
     '''API для управления Twitch аккаунтами и регистрации ботов'''
@@ -449,21 +449,53 @@ def handler(event: dict, context) -> dict:
             
             stream_context = None
             ai_messages = []
+            snapshot_id = None
             
             if use_ai and os.environ.get('OPENAI_API_KEY'):
                 try:
-                    stream_context = analyze_stream_audio(channel_url, channel_name)
-                    cur.execute(f'''
-                        UPDATE {schema}.twitch_channels 
-                        SET stream_context = %s, last_audio_analysis = NOW()
-                        WHERE id = %s
-                    ''', (stream_context, channel_id))
+                    screenshot_url = get_stream_preview(channel_name)
                     
-                    total_bots = len(bots_to_start)
-                    messages_needed = total_bots * 2
-                    ai_messages = generate_multiple_messages(stream_context, messages_needed)
+                    if screenshot_url:
+                        visual_data = analyze_stream_visual(screenshot_url, channel_name)
+                        
+                        cur.execute(f'''
+                            INSERT INTO {schema}.stream_snapshots 
+                            (channel_id, screenshot_url, analysis_text, detected_game, detected_activity, viewer_reactions, analyzed_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                            RETURNING id
+                        ''', (
+                            channel_id, 
+                            screenshot_url, 
+                            visual_data.get('analysis', ''),
+                            visual_data.get('game', ''),
+                            visual_data.get('activity', ''),
+                            json.dumps(visual_data.get('reactions', []))
+                        ))
+                        
+                        snapshot_id = cur.fetchone()[0]
+                        
+                        stream_context = f"{visual_data.get('analysis', '')}. Игра: {visual_data.get('game', 'Unknown')}. {visual_data.get('activity', '')}"
+                        ai_messages = visual_data.get('reactions', [])
+                        
+                        cur.execute(f'''
+                            UPDATE {schema}.twitch_channels 
+                            SET stream_context = %s, last_audio_analysis = NOW()
+                            WHERE id = %s
+                        ''', (stream_context, channel_id))
+                    else:
+                        stream_context = analyze_stream_audio(channel_url, channel_name)
+                        cur.execute(f'''
+                            UPDATE {schema}.twitch_channels 
+                            SET stream_context = %s, last_audio_analysis = NOW()
+                            WHERE id = %s
+                        ''', (stream_context, channel_id))
+                        
+                        total_bots = len(bots_to_start)
+                        messages_needed = total_bots * 2
+                        ai_messages = generate_multiple_messages(stream_context, messages_needed)
                 except Exception as e:
                     stream_context = None
+                    snapshot_id = None
             
             fallback_messages = [
                 'Привет всем!', 'Отличный стрим!', 'Круто!', 'Интересно смотреть',
@@ -504,9 +536,9 @@ def handler(event: dict, context) -> dict:
                     
                     cur.execute(f'''
                         INSERT INTO {schema}.chat_messages 
-                        (account_id, channel_id, session_id, message_text, is_ai_generated, context_used)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    ''', (bot_id, channel_id, session_id, message, is_ai, stream_context))
+                        (account_id, channel_id, session_id, message_text, is_ai_generated, context_used, snapshot_id, visual_context_used)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (bot_id, channel_id, session_id, message, is_ai, stream_context, snapshot_id, stream_context if snapshot_id else None))
                 
                 cur.execute(f'''
                     UPDATE {schema}.bot_sessions 
@@ -750,6 +782,25 @@ def handler(event: dict, context) -> dict:
                     'contextUsed': row[6]
                 })
             
+            cur.execute(f'''
+                SELECT screenshot_url, analysis_text, detected_game, detected_activity,
+                       TO_CHAR(created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at
+                FROM {schema}.stream_snapshots
+                WHERE channel_id = %s
+                ORDER BY created_at DESC
+                LIMIT 5
+            ''', (channel_id,))
+            
+            snapshots = []
+            for row in cur.fetchall():
+                snapshots.append({
+                    'url': row[0],
+                    'analysis': row[1],
+                    'game': row[2],
+                    'activity': row[3],
+                    'createdAt': row[4]
+                })
+            
             cur.close()
             conn.close()
             
@@ -759,7 +810,7 @@ def handler(event: dict, context) -> dict:
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*'
                 },
-                'body': json.dumps({'messages': messages}),
+                'body': json.dumps({'messages': messages, 'snapshots': snapshots}),
                 'isBase64Encoded': False
             }
         
