@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import Icon from '@/components/ui/icon';
+import BotControlPanel from '@/components/BotControlPanel';
 
 type Account = {
   id: string;
@@ -82,6 +83,8 @@ export default function Index() {
   const [channelSubmitting, setChannelSubmitting] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [showBotControl, setShowBotControl] = useState(false);
+  const [botControlChannel, setBotControlChannel] = useState<{ id: string; name: string } | null>(null);
 
   const fetchAccounts = async () => {
     try {
@@ -639,12 +642,12 @@ export default function Index() {
                                     size="sm"
                                     variant="secondary"
                                     onClick={() => {
-                                      const count = prompt('Сколько ботов назначить на канал?', channel.targetViewers.toString());
-                                      if (count) handleAssignBots(channel.id, parseInt(count));
+                                      setBotControlChannel({ id: channel.id, name: channel.channelName });
+                                      setShowBotControl(true);
                                     }}
                                   >
-                                    <Icon name="Users" size={16} />
-                                    Назначить
+                                    <Icon name="Settings" size={16} />
+                                    Настройки
                                   </Button>
                                   <Button 
                                     className="gap-2" 
@@ -912,9 +915,9 @@ export default function Index() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Icon name="Settings" size={24} />
-                  Настройки интеграции
+                  Настройки системы
                 </CardTitle>
-                <CardDescription>Конфигурация OAuth и параметров регистрации</CardDescription>
+                <CardDescription>API ключи и конфигурация</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
@@ -960,6 +963,17 @@ export default function Index() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {showBotControl && botControlChannel && (
+        <BotControlPanel
+          channelId={botControlChannel.id}
+          channelName={botControlChannel.name}
+          onClose={() => {
+            setShowBotControl(false);
+            setBotControlChannel(null);
+          }}
+        />
+      )}
     </div>
   );
 }

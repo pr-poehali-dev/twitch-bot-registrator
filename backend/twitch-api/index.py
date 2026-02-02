@@ -30,6 +30,12 @@ def handler(event: dict, context) -> dict:
     cur = conn.cursor()
     
     path = event.get('queryStringParameters', {}).get('action', '')
+    body = {}
+    if method == 'POST':
+        try:
+            body = json.loads(event.get('body', '{}'))
+        except:
+            body = {}
     
     try:
         if method == 'GET' and path == 'list':
@@ -811,6 +817,49 @@ def handler(event: dict, context) -> dict:
                     'Access-Control-Allow-Origin': '*'
                 },
                 'body': json.dumps({'messages': messages, 'snapshots': snapshots}),
+                'isBase64Encoded': False
+            }
+        
+        elif method == 'POST' and path == 'bot-config':
+            channel_id = body.get('channelId')
+            if not channel_id:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'channelId обязателен'}),
+                    'isBase64Encoded': False
+                }
+            
+            config_data = {
+                'message_frequency': body.get('messageFrequency', 5),
+                'activity_level': body.get('activityLevel', 'medium'),
+                'message_style': body.get('messageStyle', 'casual'),
+                'use_context_analysis': body.get('useContextAnalysis', True),
+                'enabled': body.get('enabled', False)
+            }
+            
+            cur.execute(f'''
+                INSERT INTO {schema}.bot_configs (channel_id, config_data, updated_at)
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (channel_id) 
+                DO UPDATE SET config_data = EXCLUDED.config_data, updated_at = CURRENT_TIMESTAMP
+            ''', (channel_id, json.dumps(config_data)))
+            
+            cur.close()
+            conn.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'success': True, 'config': config_data}),
                 'isBase64Encoded': False
             }
         
