@@ -546,28 +546,32 @@ export default function Index() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Icon name="Radio" size={24} />
-                    Добавить канал
+                    Добавить целевой канал
                   </CardTitle>
-                  <CardDescription>Укажите Twitch канал для направления ботов</CardDescription>
+                  <CardDescription>
+                    Укажите <strong>существующий</strong> канал на Twitch, куда будут подключаться боты для просмотра
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="channelName">Название канала</Label>
+                    <Label htmlFor="channelName">Имя канала (username)</Label>
                     <Input 
                       id="channelName" 
-                      placeholder="example_streamer"
+                      placeholder="shroud"
                       value={channelName}
                       onChange={(e) => setChannelName(e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground">Введите username существующего стримера на Twitch</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="channelUrl">URL канала</Label>
                     <Input 
                       id="channelUrl" 
-                      placeholder="https://twitch.tv/example_streamer"
+                      placeholder="https://twitch.tv/shroud"
                       value={channelUrl}
                       onChange={(e) => setChannelUrl(e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground">Полная ссылка на канал стримера</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="targetViewers">Целевое количество зрителей</Label>
@@ -580,6 +584,18 @@ export default function Index() {
                       min="1"
                     />
                   </div>
+                  <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <Icon name="AlertCircle" size={16} className="text-yellow-500 mt-0.5" />
+                      <div>
+                        <p className="text-yellow-500 font-medium">Важно:</p>
+                        <p className="text-muted-foreground text-xs mt-1">
+                          Система не создаёт новые каналы на Twitch. Укажите существующий канал, 
+                          к которому подключатся боты для увеличения просмотров.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                   <Button 
                     className="w-full gap-2" 
                     size="lg"
@@ -587,7 +603,7 @@ export default function Index() {
                     disabled={channelSubmitting}
                   >
                     <Icon name="Plus" size={20} />
-                    {channelSubmitting ? 'Добавление...' : 'Добавить канал'}
+                    {channelSubmitting ? 'Добавление...' : 'Добавить в список'}
                   </Button>
                 </CardContent>
               </Card>
@@ -596,9 +612,9 @@ export default function Index() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Icon name="List" size={24} />
-                    Активные каналы
+                    Целевые каналы
                   </CardTitle>
-                  <CardDescription>Управление каналами и ботами</CardDescription>
+                  <CardDescription>Существующие каналы на Twitch для накрутки просмотров</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-[400px]">
