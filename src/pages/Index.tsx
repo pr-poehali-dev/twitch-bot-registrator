@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import Icon from '@/components/ui/icon';
 import BotControlPanel from '@/components/BotControlPanel';
+import BotActivityMonitor from '@/components/BotActivityMonitor';
 
 type Account = {
   id: string;
@@ -85,6 +86,8 @@ export default function Index() {
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [showBotControl, setShowBotControl] = useState(false);
   const [botControlChannel, setBotControlChannel] = useState<{ id: string; name: string } | null>(null);
+  const [showMonitor, setShowMonitor] = useState(false);
+  const [monitorChannel, setMonitorChannel] = useState<{ id: string; name: string } | null>(null);
 
   const fetchAccounts = async () => {
     try {
@@ -663,7 +666,7 @@ export default function Index() {
                                   <span className="text-xs text-primary font-medium">AI контекст активен</span>
                                 </div>
                               </div>
-                              <div className="grid grid-cols-2 gap-2">
+                              <div className="grid grid-cols-3 gap-2">
                                 <Button 
                                   className="gap-2" 
                                   size="sm"
@@ -681,6 +684,18 @@ export default function Index() {
                                 >
                                   <Icon name="MessageCircle" size={16} />
                                   Чат
+                                </Button>
+                                <Button 
+                                  className="gap-2" 
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    setMonitorChannel({ id: channel.id, name: channel.channelName });
+                                    setShowMonitor(true);
+                                  }}
+                                >
+                                  <Icon name="Activity" size={16} />
+                                  Монитор
                                 </Button>
                               </div>
                             </CardContent>
@@ -973,6 +988,28 @@ export default function Index() {
             setBotControlChannel(null);
           }}
         />
+      )}
+
+      {showMonitor && monitorChannel && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 z-50">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => {
+                  setShowMonitor(false);
+                  setMonitorChannel(null);
+                }}
+                className="p-2 rounded-lg bg-card border border-border hover:bg-card/80 transition-colors"
+              >
+                <Icon name="X" size={24} />
+              </button>
+            </div>
+            <BotActivityMonitor 
+              channelId={monitorChannel.id}
+              channelName={monitorChannel.name}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
